@@ -65,5 +65,5 @@ curl -X GET "http://localhost:9200/_cat/indices?v"
 curl -X GET "http://localhost:9200/cycling-data/_mapping?pretty"
 
 8.Open Kibana Dashboard
-Go to ? http://localhost:5601/app/dashboards#
+Go to -> http://localhost:5601/app/dashboards#
 Look for the cycling_dashboard and explore!
