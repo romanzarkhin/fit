@@ -35,8 +35,7 @@ C:\Users\Roman\Desktop\local\fit
 
 ## Setup Instructions
 
-1. **Clone the repository**
-
+1.Clone the repository
 ```cmd```
 git clone https://github.com/yourusername/cycling-fit-dashboard.git
 cd cycling-fit-dashboard
