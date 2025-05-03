@@ -8,8 +8,6 @@ It’s designed to work on **Windows 11** with Docker, Python, and Command Promp
 
 ## Project Structure
 
-C:\Users\Roman\Desktop\local\fit
-|__ pycache__
 |__ fit_files
 | |__ sample
 | |-- 2024-01-27-20-09-14.fit
