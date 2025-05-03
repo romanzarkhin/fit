@@ -1,0 +1,27 @@
+{
+  "index_patterns": ["cycling-data*"],
+  "priority": 50,
+  "template": {
+    "mappings": {
+      "properties": {
+        "timestamp": { "type": "date" },
+        "heart_rate": { "type": "integer" },
+        "power": { "type": "integer" },
+        "cadence": { "type": "integer" },
+        "speed": { "type": "float" },
+        "distance": { "type": "float" },
+        "altitude": { "type": "float" },
+        "temperature": { "type": "float" },
+        "left_right_balance": { "type": "integer" },
+        "enhanced_altitude": { "type": "float" },
+        "enhanced_speed": { "type": "float" },
+        "left_pedal_smoothness": { "type": "float" },
+        "right_pedal_smoothness": { "type": "float" },
+        "left_torque_effectiveness": { "type": "float" },
+        "right_torque_effectiveness": { "type": "float" },
+		"heart_rate_zone": { "type": "keyword" },
+		"power_zone": { "type": "keyword" }
+      }
+    }
+  }
+}

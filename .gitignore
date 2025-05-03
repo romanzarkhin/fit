@@ -1,0 +1,35 @@
+# Ignore Python cache and virtual environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+env/
+venv/
+
+# Ignore local config and environment files
+.env
+
+# Ignore data files (JSON outputs, logs, zips)
+fit_files/*.json
+fit_files/*.zip
+*.log
+
+# Ignore Docker-related noise
+*.pid
+*.sock
+
+# Ignore system files
+.DS_Store
+Thumbs.db
+
+# Ignore editor/IDE configs
+.vscode/
+.idea/
+*.swp
+
+# Ignore Jupyter Notebook checkpoints (if added later)
+.ipynb_checkpoints/
+
+# Ignore the dashboard export if it’s large or regenerated often
+cycling_dashboard.nsjson
