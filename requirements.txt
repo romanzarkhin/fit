@@ -1,3 +1,0 @@
-fitparse==1.2.0
-elasticsearch==8.11.1
-tqdm==4.66.1
