@@ -13,7 +13,7 @@ The main entrypoint is `elk_fit_setup.sh`, a shell script that scaffolds a local
 
 Optional:
 - An Apple Health export folder at `apple_health_export/export.xml` if you want to enrich Garmin sessions with daily HR summaries.
-- Your Garmin `.fit` files in the `garmin/` subfolder (this repo already includes many `.fit` files).
+- Your Garmin `.fit` files in the `garmin/` subfolder (this repo already includes sample `.fit` files).
 
 ## Quick run (one command)
 
