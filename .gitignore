@@ -1,1 +1,29 @@
+# OS specific
 .DS_Store
+Thumbs.db
+
+# Python
+elk_env/
+venv/
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+
+# Generated files
+daily_hr_summary.csv
+
+# User data
+apple_health_export/
+
+# Docker compose (created by scripts)
+docker-compose.yml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
