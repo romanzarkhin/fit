@@ -110,15 +110,14 @@ def parse_fit_file(path):
     return data
 
 def load_to_es():
-    for file in os.listdir(FOLDER):
-        if file.endswith(".fit"):
-            records = parse_fit_file(os.path.join(FOLDER, file))
-            session_metrics = compute_session_metrics(records)
-            session_id = os.path.splitext(file)[0]
-            for i, record in enumerate(records):
-                record["session_id"] = session_id
-                record.update(session_metrics)
-                es.index(index=INDEX, id=f"{file}-{i}", document=record)
+    for file_path in FOLDER.glob("*.fit"):
+        records = parse_fit_file(str(file_path))
+        session_metrics = compute_session_metrics(records)
+        session_id = file_path.stem
+        for i, record in enumerate(records):
+            record["session_id"] = session_id
+            record.update(session_metrics)
+            es.index(index=INDEX, id=f"{file_path.name}-{i}", document=record)
 
 if __name__ == "__main__":
     es.indices.delete(index=INDEX, ignore_unavailable=True)
