@@ -30,7 +30,7 @@ es = Elasticsearch("http://localhost:9200")
 INDEX = "fit-data"
 
 HR_ZONES = {
-    "heart_rate_zone_1": (98, 117),
+    "hrz1": (98, 117),
     "hrz2": (118, 137),
     "hrz3": (138, 156),
     "hrz4": (157, 176),
@@ -38,7 +38,7 @@ HR_ZONES = {
 }
 
 POWER_ZONES = {
-    "power_zone_1": (0, 109),
+    "pwz1": (0, 109),
     "pwz2": (110, 149),
     "pwz3": (150, 179),
     "pwz4": (180, 210),
