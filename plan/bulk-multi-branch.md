@@ -62,6 +62,60 @@ Notes on conflict resolution
 - If a conflict affects binary files (e.g., `.fit`), avoid committing large binaries into the combined branch — prefer keeping only code and small metadata. If you must keep a binary, consider storing it externally (S3) or in a release artifact.
 - Run `git mergetool` if you prefer a GUI to resolve text conflicts.
 
+Preserving local `garmin/` files
+--------------------------------
+You mentioned you want to avoid moving your local `garmin/` folder between branches. Two safe approaches are provided below; the first is recommended because it keeps your working copy untouched while you perform merges in an isolated workspace.
+
+Option A — Recommended: use a separate worktree and sparse-checkout (no changes to your current working tree)
+
+```sh
+# create an isolated worktree from origin/main (outside current working tree)
+git fetch origin
+git worktree add ../fit-merge origin/main
+cd ../fit-merge
+
+# enable sparse-checkout and exclude the garmin folder so it is not present in this worktree
+git sparse-checkout init --sparse
+git sparse-checkout set '/*' '!/garmin'
+
+# create the combined branch and perform merges here
+git checkout -b romanz/bulk-multi-branch
+git merge --no-ff origin/copilot/add-es-bulk-loader-script
+git merge --no-ff origin/copilot/update-load-fit-to-es-config
+git merge --no-ff romanz/snapshot211125
+
+# resolve conflicts and test in this isolated worktree, then push
+git push origin romanz/bulk-multi-branch
+```
+
+Notes: this keeps your original working tree (and its `garmin/` files) untouched. The worktree will not have `garmin/` checked out, so merges won't attempt to move or delete those files locally.
+
+Option B — Merge on your main working copy but keep local `garmin/` files (restore after merge)
+
+If you prefer to do merges in-place, you can tell Git to keep your local `garmin/` contents after a merge. This is slightly more manual but works when patches only modify code and metadata:
+
+```sh
+git checkout -b romanz/bulk-multi-branch
+git merge --no-ff origin/copilot/add-es-bulk-loader-script || true
+# if merge succeeds or after resolving textual conflicts, ensure garmin stays as-is:
+git checkout --ours -- garmin || true
+git add garmin && git commit --no-edit || true
+
+git merge --no-ff origin/copilot/update-load-fit-to-es-config || true
+git checkout --ours -- garmin || true
+git add garmin && git commit --no-edit || true
+
+git merge --no-ff romanz/snapshot211125 || true
+git checkout --ours -- garmin || true
+git add garmin && git commit --no-edit || true
+
+# run tests, then push
+git push origin romanz/bulk-multi-branch
+```
+
+Notes: `git checkout --ours -- garmin` restores the `garmin/` tree from the current branch in case the merge attempted to change or delete it. Use this only when you are confident the `garmin/` contents should remain exactly as in your working copy.
+
+
 Testing checklist (quick smoke tests)
 -----------------------------------
 - Run `python load_fit_to_es.py --help` if present to ensure CLI loads.
