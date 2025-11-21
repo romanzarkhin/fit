@@ -8,3 +8,4 @@ elk_env/
 *.egg-info/
 dist/
 build/
+/plan
