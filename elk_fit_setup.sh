@@ -51,6 +51,11 @@ import json
 import datetime
 from fitparse import FitFile
 from elasticsearch import Elasticsearch
+import pandas as pd
+
+hr_df = pd.read_csv("daily_hr_summary.csv", parse_dates=["date"])
+hr_df["date"] = hr_df["date"].dt.date
+hr_lookup = hr_df.set_index("date").to_dict(orient="index")
 
 FOLDER = "/Users/personal/Desktop/private/fit/garmin"
 FTP = 210  # Update with your current FTP value
@@ -58,15 +63,15 @@ es = Elasticsearch("http://localhost:9200")
 INDEX = "fit-data"
 
 HR_ZONES = {
-    "heart_rate_zone_1": (98, 117),
+    "hrz1": (98, 117),
     "hrz2": (118, 137),
     "hrz3": (138, 156),
     "hrz4": (157, 176),
-    "hrz5": (177, 195),
+    "hrz5": (177, 198),
 }
 
 POWER_ZONES = {
-    "power_zone_1": (0, 109),
+    "pwz1": (0, 109),
     "pwz2": (110, 149),
     "pwz3": (150, 179),
     "pwz4": (180, 210),
@@ -83,6 +88,14 @@ def classify_zone(value, zones):
             return name
     return None
 
+def get_max_5min_power(records):
+    power_values = [r.get("power") for r in records if isinstance(r.get("power"), (int, float))]
+    if len(power_values) < 300:
+        return None  # not enough data for a 5-min interval
+    s = pd.Series(power_values)
+    rolling_avg = s.rolling(window=300).mean()
+    return round(rolling_avg.max(), 1)
+
 def compute_session_metrics(records):
     powers = [r.get("power") for r in records if isinstance(r.get("power"), (int, float))]
     hrs = [r.get("heart_rate") for r in records if isinstance(r.get("heart_rate"), (int, float))]
@@ -98,6 +111,8 @@ def compute_session_metrics(records):
     normalized_power = (sum([p**4 for p in powers]) / len(powers))**0.25 if powers else 0
     intensity_factor = normalized_power / FTP if FTP > 0 else 0
     tss = (moving_time * normalized_power * intensity_factor) / (FTP * 3600) * 100 if FTP > 0 else 0
+    max_5min_power = get_max_5min_power(records)
+    vo2max_estimate = (max_5min_power * 12) / 73 if max_5min_power else None
 
     midpoint = len(records) // 2
     drift = None
@@ -125,17 +140,9 @@ def compute_session_metrics(records):
         "intensity_factor": intensity_factor,
         "training_stress_score": tss,
         "hr_drift_pct": drift,
+        "max_5min_power": max_5min_power,
+        "vo2max_estimate": round(vo2max_estimate, 1) if vo2max_estimate else None,
     }
-
-def parse_fit_file(path):
-    fitfile = FitFile(path)
-    data = []
-    for record in fitfile.get_messages("record"):
-        fields = {f.name: f.value for f in record}
-        fields["heart_rate_zone"] = classify_zone(fields.get("heart_rate"), HR_ZONES)
-        fields["power_zone"] = classify_zone(fields.get("power"), POWER_ZONES)
-        data.append(fields)
-    return data
 
 def load_to_es():
     for file in os.listdir(FOLDER):
@@ -143,9 +150,22 @@ def load_to_es():
             records = parse_fit_file(os.path.join(FOLDER, file))
             session_metrics = compute_session_metrics(records)
             session_id = os.path.splitext(file)[0]
+            
+            # Extract session date for enrichment
+            session_date = records[0].get("timestamp").date() if records and "timestamp" in records[0] else None
+            enrichment = hr_lookup.get(session_date, {}) if session_date else {}
+
             for i, record in enumerate(records):
                 record["session_id"] = session_id
                 record.update(session_metrics)
+
+                # Add Apple HR enrichment
+                record.update({
+                    "resting_hr": enrichment.get("resting_hr_avg"),
+                    "min_hr": enrichment.get("min_hr"),
+                    "hrv_avg": enrichment.get("hrv_avg"),
+                })
+
                 es.index(index=INDEX, id=f"{file}-{i}", document=record)
 
 if __name__ == "__main__":
@@ -153,6 +173,54 @@ if __name__ == "__main__":
     es.indices.create(index=INDEX, ignore=400)
     load_to_es()
 EOF
+
+# 4A. Preprocess Apple Health HR data
+cat <<EOF > parse_apple_hr.py
+import xml.etree.ElementTree as ET
+import pandas as pd
+from collections import defaultdict
+
+tree = ET.parse("apple_health_export/export.xml")
+root = tree.getroot()
+
+daily_hr_summary = defaultdict(lambda: {"resting_hr": [], "low_hr": [], "hrv": []})
+
+for record in root.findall("Record"):
+    record_type = record.attrib.get("type")
+    start_date = record.attrib.get("startDate")
+    value = record.attrib.get("value")
+
+    if record_type in [
+        "HKQuantityTypeIdentifierRestingHeartRate",
+        "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+        "HKQuantityTypeIdentifierHeartRate"
+    ]:
+        try:
+            date = pd.to_datetime(start_date).date()
+            val = float(value)
+            if record_type == "HKQuantityTypeIdentifierRestingHeartRate":
+                daily_hr_summary[date]["resting_hr"].append(val)
+            elif record_type == "HKQuantityTypeIdentifierHeartRate":
+                daily_hr_summary[date]["low_hr"].append(val)
+            elif record_type == "HKQuantityTypeIdentifierHeartRateVariabilitySDNN":
+                daily_hr_summary[date]["hrv"].append(val)
+        except:
+            continue
+
+summary = []
+for date, values in daily_hr_summary.items():
+    resting_avg = round(pd.Series(values["resting_hr"]).mean(), 1) if values["resting_hr"] else None
+    min_hr = round(pd.Series(values["low_hr"]).min(), 1) if values["low_hr"] else None
+    hrv_avg = round(pd.Series(values["hrv"]).mean(), 1) if values["hrv"] else None
+    summary.append({"date": date, "resting_hr_avg": resting_avg, "min_hr": min_hr, "hrv_avg": hrv_avg})
+
+df = pd.DataFrame(summary)
+df.sort_values(by="date", ascending=True, inplace=True)
+df.to_csv("daily_hr_summary.csv", index=False)
+EOF
+
+# Run the HR parsing script
+python parse_apple_hr.py
 
 # Run the loader script
 python load_fit_to_es.py
