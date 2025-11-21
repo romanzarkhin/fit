@@ -105,6 +105,14 @@ python load_fit_to_es.py
 
 The script will create the Elasticsearch index `fit-data` and index documents for each record. You can confirm by visiting Kibana at `http://localhost:5601`.
 
+**Configuring the folder location:**
+
+The script supports multiple ways to specify the folder containing `.fit` files (in order of precedence):
+
+1. CLI argument: `python load_fit_to_es.py --folder /path/to/fit/files`
+2. Environment variable: `FIT_FOLDER=/path/to/fit/files python load_fit_to_es.py`
+3. Default: `./garmin` (relative to the script location)
+
 ## Kibana setup
 
 1. Open http://localhost:5601 in your browser.
