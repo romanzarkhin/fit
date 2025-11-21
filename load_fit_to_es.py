@@ -2,13 +2,30 @@ import os
 import json
 import datetime
 import argparse
-import sys
 from pathlib import Path
 from fitparse import FitFile
 from elasticsearch import Elasticsearch
 
-# Defaults (will be overridden by CLI args or environment variables)
-FTP = 210  # default fallback
+# Configuration with precedence: CLI arg > ENV var > default
+def get_folder_path():
+    """Get folder path with precedence: CLI arg > ENV var > default relative path"""
+    parser = argparse.ArgumentParser(description='Load Garmin FIT files to Elasticsearch')
+    parser.add_argument('--folder', type=str, help='Folder containing .fit files')
+    args = parser.parse_args()
+    
+    if args.folder:
+        return Path(args.folder)
+    
+    env_folder = os.getenv('FIT_FOLDER')
+    if env_folder:
+        return Path(env_folder)
+    
+    # Default to path relative to script location
+    script_dir = Path(__file__).parent
+    return script_dir / 'garmin'
+
+FOLDER = get_folder_path()
+FTP = 210  # Update with your current FTP value
 es = Elasticsearch("http://localhost:9200")
 INDEX = "fit-data"
 
@@ -30,7 +47,6 @@ POWER_ZONES = {
     "pwz7": (299, float("inf")),
 }
 
-
 def classify_zone(value, zones):
     if value is None:
         return None
@@ -38,7 +54,6 @@ def classify_zone(value, zones):
         if low <= value <= high:
             return name
     return None
-
 
 def compute_session_metrics(records):
     powers = [r.get("power") for r in records if isinstance(r.get("power"), (int, float))]
@@ -48,11 +63,11 @@ def compute_session_metrics(records):
     distances = [r.get("distance") for r in records if isinstance(r.get("distance"), (int, float))]
 
     moving_time = len(powers)
-    pause_time = sum([max((timestamps[i + 1] - timestamps[i]).total_seconds() - 1, 0) for i in range(len(timestamps) - 1)]) if len(timestamps) > 1 else 0
+    pause_time = sum([max((timestamps[i+1] - timestamps[i]).total_seconds() - 1, 0) for i in range(len(timestamps)-1)])
 
-    avg_power = sum(powers) / len(powers) if powers else 0
-    avg_hr = sum(hrs) / len(hrs) if hrs else 0
-    normalized_power = (sum([p ** 4 for p in powers]) / len(powers)) ** 0.25 if powers else 0
+    avg_power = sum(powers)/len(powers) if powers else 0
+    avg_hr = sum(hrs)/len(hrs) if hrs else 0
+    normalized_power = (sum([p**4 for p in powers]) / len(powers))**0.25 if powers else 0
     intensity_factor = normalized_power / FTP if FTP > 0 else 0
     tss = (moving_time * normalized_power * intensity_factor) / (FTP * 3600) * 100 if FTP > 0 else 0
 
@@ -68,7 +83,7 @@ def compute_session_metrics(records):
             pw_1 = sum(p1) / len(p1)
             hr_2 = sum(h2) / len(h2)
             pw_2 = sum(p2) / len(p2)
-            if pw_1 > 0 and pw_2 > 0:
+            if pw_1 > 0:
                 drift = ((hr_2 / pw_2) - (hr_1 / pw_1)) / (hr_1 / pw_1) * 100
 
     return {
@@ -77,17 +92,15 @@ def compute_session_metrics(records):
         "moving_time_sec": moving_time,
         "pause_time_sec": pause_time,
         "distance_m": max(distances) if distances else None,
-        "elevation_gain_m": (max(elevations) - min(elevations)) if elevations else None,
+        "elevation_gain_m": max(elevations) - min(elevations) if elevations else None,
         "normalized_power": normalized_power,
         "intensity_factor": intensity_factor,
         "training_stress_score": tss,
         "hr_drift_pct": drift,
     }
 
-
 def parse_fit_file(path):
-    # FitFile expects a string path
-    fitfile = FitFile(str(path))
+    fitfile = FitFile(path)
     data = []
     for record in fitfile.get_messages("record"):
         fields = {f.name: f.value for f in record}
@@ -96,54 +109,17 @@ def parse_fit_file(path):
         data.append(fields)
     return data
 
-
-def load_to_es(folder: Path):
-    for file_path in sorted(folder.glob("*.fit")):
-        if not file_path.is_file():
-            continue
-        records = parse_fit_file(file_path)
+def load_to_es():
+    for file_path in FOLDER.glob("*.fit"):
+        records = parse_fit_file(str(file_path))
         session_metrics = compute_session_metrics(records)
         session_id = file_path.stem
         for i, record in enumerate(records):
             record["session_id"] = session_id
             record.update(session_metrics)
-            doc_id = f"{session_id}-{i}"
-            es.index(index=INDEX, id=doc_id, document=record)
-
-
-def _parse_args():
-    parser = argparse.ArgumentParser(description="Load .fit files to Elasticsearch")
-    parser.add_argument("--folder", "-f", help="Path to folder containing .fit files (overrides FIT_FOLDER env var)")
-    parser.add_argument("--ftp", type=float, help="FTP value to use for computations (overrides FTP env var)")
-    return parser.parse_args()
-
+            es.index(index=INDEX, id=f"{file_path.name}-{i}", document=record)
 
 if __name__ == "__main__":
-    args = _parse_args()
-
-    # Determine folder: CLI -> ENV -> default relative folder ./garmin next to script
-    script_dir = Path(__file__).resolve().parent
-    default_folder = script_dir / "garmin"
-    folder_arg = args.folder or os.environ.get("FIT_FOLDER")
-    FOLDER = Path(folder_arg).expanduser().resolve() if folder_arg else default_folder
-
-    # Validate folder
-    if not FOLDER.exists() or not FOLDER.is_dir():
-        print(f"Error: folder '{FOLDER}' does not exist or is not a directory. Provide --folder or set FIT_FOLDER.", file=sys.stderr)
-        sys.exit(1)
-
-    # Determine FTP: CLI -> ENV -> default
-    ftp_arg = args.ftp if args.ftp is not None else os.environ.get("FTP")
-    try:
-        if ftp_arg is not None:
-            FTP = float(ftp_arg)
-            if FTP <= 0:
-                raise ValueError("FTP must be > 0")
-    except Exception:
-        print(f"Warning: invalid FTP value '{ftp_arg}', falling back to default {FTP}", file=sys.stderr)
-
-    # Ensure index lifecycle (same behavior as before)
     es.indices.delete(index=INDEX, ignore_unavailable=True)
     es.indices.create(index=INDEX, ignore=400)
-
-    load_to_es(FOLDER)
+    load_to_es()
