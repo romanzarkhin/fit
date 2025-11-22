@@ -8,5 +8,5 @@ elk_env/
 *.egg-info/
 dist/
 build/
-/plan
-/docswatch/apple_health_export/export.xml
+plan/
+watch/apple_health_export/export.xml
