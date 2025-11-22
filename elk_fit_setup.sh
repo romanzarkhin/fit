@@ -67,7 +67,7 @@ echo "✅ Python environment ready"
 # 3. Run the bulk loader (recommended for production)
 echo "📥 Loading Garmin .fit files into Elasticsearch..."
 cd "$REPO_ROOT"
-python3 scripts/es_bulk_loader.py --data-dir garmin --index fit-data-enriched --enrichment-mode watch --health-export watch/apple_health_export/export.xml
+python3 scripts/es_bulk_loader.py --data-dir garmin --index fit-data##-enriched --enrichment-mode watch --health-export watch/apple_health_export/export.xml
 
 # 4. Import pre-configured dashboard
 echo "📊 Importing pre-configured dashboard..."
