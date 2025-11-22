@@ -1,13 +1,18 @@
+#!/bin/bash
 # Step-by-step ELK Stack + Garmin .fit Analysis Setup on Mac
 
-# 1. Install Docker Desktop for Mac (if not already installed)
-# Visit https://www.docker.com/products/docker-desktop and follow installation instructions
+set -e  # Exit on error
 
-# 2. Pull and Run ELK Stack using Docker
+echo "🚀 Starting ELK Stack + Garmin .fit Setup..."
+
+# Save the original repo root before any directory changes
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# 1. Create and start ELK Stack using Docker
+echo "📦 Setting up Elasticsearch and Kibana..."
 mkdir -p ~/elk-stack && cd ~/elk-stack
 
-# Create a Docker Compose file for ELK
-cat <<EOF > docker-compose.yml
+cat > docker-compose.yml <<'EOF'
 services:
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
@@ -34,28 +39,71 @@ volumes:
   esdata:
 EOF
 
-# Start ELK Stack
-open http://localhost:5601 # Optional - open Kibana interface
-
 docker compose up -d
+echo "✅ Elasticsearch and Kibana started"
 
-# 3. Set up Python environment to convert .fit to .json
+# Wait for Elasticsearch to be ready
+echo "⏳ Waiting for Elasticsearch to be ready..."
+for i in {1..30}; do
+  if curl -s http://localhost:9200 > /dev/null 2>&1; then
+    echo "✅ Elasticsearch is ready"
+    break
+  fi
+  echo "  Attempt $i/30..."
+  sleep 2
+done
+
+# 2. Set up Python environment
+echo "🐍 Setting up Python environment..."
+cd "$REPO_ROOT"  # Go back to repo root
+
 python3 -m venv elk_env
 source elk_env/bin/activate
-pip install fitparse "elasticsearch<9"
 
-# 4. Run the loader script (load_fit_to_es.py is now a standalone file in the repo)
-# The script now supports configuration via:
-# - CLI argument: --folder /path/to/fit/files
-# - Environment variable: FIT_FOLDER=/path/to/fit/files
-# - Default: ./garmin (relative to script location)
-python load_fit_to_es.py
+pip install --upgrade pip > /dev/null 2>&1
+pip install fitparse "elasticsearch<9" pandas tqdm > /dev/null 2>&1
+echo "✅ Python environment ready"
 
-# 5. Access Kibana Dashboard
-# Visit http://localhost:5601 and:
-# - Go to "Stack Management > Index Patterns"
-# - Create index pattern: fit-data*
-# - Visualize metrics like heart_rate, cadence, speed etc. using "Visualize > Create Visualization"
-# - New fields available: hr_drift_pct, normalized_power, training_stress_score, intensity_factor, moving_time_sec, avg_hr, avg_power, distance_m, elevation_gain_m, pause_time_sec
+# 3. Run the bulk loader (recommended for production)
+echo "📥 Loading Garmin .fit files into Elasticsearch..."
+cd "$REPO_ROOT"
+python3 scripts/es_bulk_loader.py --data-dir garmin --index fit-data-enriched --enrichment-mode watch --health-export watch/apple_health_export/export.xml
 
-# Done!
+# 4. Import pre-configured dashboard
+echo "📊 Importing pre-configured dashboard..."
+DASHBOARD_FILE="$REPO_ROOT/kibana/cyclist_dashboard.ndjson"
+if [ -f "$DASHBOARD_FILE" ]; then
+  # Wait a moment for index to be fully ready
+  sleep 2
+  curl -s -X POST "http://localhost:5601/api/saved_objects/_import?overwrite=true" \
+    -H "kbn-xsrf: true" \
+    --form "file=@$DASHBOARD_FILE" > /dev/null 2>&1
+  if [ $? -eq 0 ]; then
+    echo "✅ Dashboard imported successfully"
+  else
+    echo "⚠️  Dashboard import failed (Kibana may still be starting up)"
+  fi
+else
+  echo "⚠️  Dashboard file not found at $DASHBOARD_FILE"
+fi
+
+# 5. Print access information
+echo ""
+echo "✅ Setup complete!"
+echo ""
+echo "📊 Access Kibana Dashboard:"
+echo "   URL: http://localhost:5601"
+echo ""
+echo "📖 Next steps:"
+echo "   1. Open http://localhost:5601 in your browser"
+echo "   2. Go to Dashboards and select 'cyclist' to view pre-configured visualizations"
+echo "   3. Use Discover for ad-hoc exploration of your cycling metrics"
+echo ""
+echo "📝 Available metrics:"
+echo "   - heart_rate, power, cadence, speed"
+echo "   - training_stress_score (TSS)"
+echo "   - normalized_power, intensity_factor"
+echo "   - hr_drift_pct (heart rate drift)"
+echo "   - avg_power, avg_hr, distance_m, elevation_gain_m"
+echo ""
+echo "For more info, see README.md"

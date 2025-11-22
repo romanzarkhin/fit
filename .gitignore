@@ -9,3 +9,4 @@ elk_env/
 dist/
 build/
 /plan
+/docswatch/apple_health_export/export.xml
